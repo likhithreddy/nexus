@@ -168,7 +168,7 @@ export async function cmdListTools(json: boolean): Promise<void> {
       tool: t.name,
       server: route?.serverName ?? "-",
       cache: route?.cacheable ? "yes" : "no",
-      desc: (t.description ?? "").split("\n")[0] ?? "",
+      desc: ((t.description ?? "").split("\n")[0] ?? "").slice(0, 70),
     };
   });
   await registry.closeAll();
@@ -213,7 +213,7 @@ export async function cmdMemory(sub: string | undefined, rest: string[]): Promis
   const dbPath = path.join(getNexusHome(), "memory.db");
   if (!existsSync(dbPath)) {
     console.log(
-      `No memory store at ${dbPath}.\nEnable memory (OPENAI_API_KEY or NEXUS_EMBEDDING=hash) and run 'nexus serve' first.`,
+      `No memory store at ${dbPath}.\nRun 'nexus serve' once to create it (memory is on by default).`,
     );
     return;
   }
