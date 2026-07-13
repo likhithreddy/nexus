@@ -1,0 +1,52 @@
+[
+  {
+    "name": "memory",
+    "description": "Knowledge-graph memory server (entities, relations, observations).",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-memory"],
+    "requiredEnv": [],
+    "authType": "none",
+    "notes": "Read-write knowledge graph; several tools, good for testing discovery."
+  },
+  {
+    "name": "sequential-thinking",
+    "description": "Dynamic, reflective problem-solving via step-by-step thinking.",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+    "requiredEnv": [],
+    "authType": "none"
+  },
+  {
+    "name": "github",
+    "description": "GitHub repos, issues, PRs, search.",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "requiredEnv": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
+    "authType": "api_key",
+    "underlyingService": "The MCP server is free/open-source, but requires a GitHub account and a personal access token.",
+    "notes": "Token needs repo/read scopes depending on what you query."
+  },
+  {
+    "name": "filesystem",
+    "description": "Read/write files under one or more allowed directories. Append the allowed path(s) as args: `nexus add filesystem -- <abs-path>` (or edit config).",
+    "transport": "stdio",
+    "command": "npx",
+    "args": [],
+    "requiredEnv": [],
+    "authType": "none",
+    "notes": "Needs at least one absolute allowed-directory argument. Example: nexus add filesystem -- /Users/you/docs"
+  },
+  {
+    "name": "example-remote",
+    "description": "Template for a remote (Streamable HTTP) MCP server.",
+    "transport": "streamable-http",
+    "url": "https://example.com/mcp",
+    "headers": {},
+    "requiredEnv": [],
+    "authType": "none",
+    "notes": "Template — replace 'url' (and add --header Authorization=...) before using."
+  }
+]

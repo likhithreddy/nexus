@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+.npmrc
+.DS_Store
+coverage/
+# Local runtime data (config, db) lives in NEXUS_HOME (~/.nexus) by default, but
+# if a project-local override is used, ignore it.
+.nexus-local/
