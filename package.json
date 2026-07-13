@@ -3,6 +3,25 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Nexus — an MCP aggregator with a memory layer.",
+  "license": "MIT",
+  "author": "Likhith Reddy",
+  "homepage": "https://github.com/likhithreddy/nexus",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/likhithreddy/nexus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/likhithreddy/nexus/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "aggregator",
+    "memory",
+    "cache",
+    "cli",
+    "embeddings"
+  ],
   "engines": {
     "node": ">=20"
   },
