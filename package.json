@@ -23,7 +23,7 @@
     "embeddings"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "nexus": "dist/index.js"

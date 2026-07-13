@@ -71,29 +71,36 @@ export async function cmdServe(): Promise<void> {
       logger.warn({ err: (err as Error).message, provider }, "embedder unavailable; exact-match only");
       embedder = undefined;
     }
-    const storePath = path.join(getNexusHome(), "memory.db");
-    const store = new SQLiteStore(storePath, nominalDim);
-    const explicit = buildTtlResolver(config.ttl ?? {});
-    const ttlFor = composeTtlResolver({
-      explicit,
-      heuristics: config.ttlHeuristics === true,
-      heuristicTtlMs: config.heuristicTtlMs ? parseDuration(config.heuristicTtlMs) : undefined,
-    });
-    if (config.ttlHeuristics) logger.info({ heuristicTtlMs: config.heuristicTtlMs ?? "5m" }, "TTL heuristics enabled");
-    // Gray-zone verifier: harness-driven (MCP sampling), keyless.
-    const verifier = new SamplingVerifier({
-      sample: async (p) => {
-        if (!samplerHolder.current) throw new Error("sampling not connected");
-        return samplerHolder.current(p);
-      },
-    });
-    memory = new MemoryCache({ store, embedder, ttlFor, verifier });
-    // PRD §8: drop cache entries contributed by a removed server on config change.
-    registry.on("server-removed", ({ name }) => {
-      const n = memory?.invalidateServer(name) ?? 0;
-      if (n) logger.info({ server: name, invalidated: n }, "invalidated memory entries");
-    });
-    logger.info({ provider, dim: embedder?.dimension ?? nominalDim, storePath }, "memory enabled");
+    try {
+      const storePath = path.join(getNexusHome(), "memory.db");
+      const store = new SQLiteStore(storePath, nominalDim);
+      const explicit = buildTtlResolver(config.ttl ?? {});
+      const ttlFor = composeTtlResolver({
+        explicit,
+        heuristics: config.ttlHeuristics === true,
+        heuristicTtlMs: config.heuristicTtlMs ? parseDuration(config.heuristicTtlMs) : undefined,
+      });
+      if (config.ttlHeuristics) logger.info({ heuristicTtlMs: config.heuristicTtlMs ?? "5m" }, "TTL heuristics enabled");
+      // Gray-zone verifier: harness-driven (MCP sampling), keyless.
+      const verifier = new SamplingVerifier({
+        sample: async (p) => {
+          if (!samplerHolder.current) throw new Error("sampling not connected");
+          return samplerHolder.current(p);
+        },
+      });
+      memory = new MemoryCache({ store, embedder, ttlFor, verifier });
+      // PRD §8: drop cache entries contributed by a removed server on config change.
+      registry.on("server-removed", ({ name }) => {
+        const n = memory?.invalidateServer(name) ?? 0;
+        if (n) logger.info({ server: name, invalidated: n }, "invalidated memory entries");
+      });
+      logger.info({ provider, dim: embedder?.dimension ?? nominalDim, storePath }, "memory enabled");
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message },
+        "memory store init failed; running without memory (needs Node 22+ for node:sqlite)",
+      );
+    }
   } else {
     logger.info("memory disabled (NEXUS_MEMORY=0) — pure aggregation");
   }

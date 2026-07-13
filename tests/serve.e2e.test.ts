@@ -98,7 +98,7 @@ describe("nexus serve (real subprocess over stdio)", () => {
     });
   }, 30_000);
 
-  it.skipIf(!getDefaultSecretStore())("secrets: a keychain-stored env var reaches the child at spawn", async () => {
+  it.skipIf(process.platform !== "darwin" || !getDefaultSecretStore())("secrets: a keychain-stored env var reaches the child at spawn", async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "nexus-secret-"));
     const store = new KeychainSecretStore();
     try {
