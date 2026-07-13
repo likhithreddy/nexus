@@ -6,7 +6,6 @@ import {
   cmdAdd,
   cmdRemove,
   cmdMemory,
-  cmdGraph,
   cmdDashboard,
 } from "./commands.js";
 import { logger } from "../logging.js";
@@ -17,14 +16,13 @@ const HELP = `nexus — MCP aggregator with a memory layer
 Usage:
   nexus serve                                  Run the MCP gateway over stdio
   nexus list-servers [--json|-j]               Show configured child servers
-  nexus list-tools [--json|-j]                 Connect + show the merged tool manifest
+  nexus list-tools [--json|-j] [--tree]        Connect + show the merged tool manifest (--tree = grouped by server; "nexus graph" is an alias)
   nexus add <catalog-name> [--env K=V]...      Install a server from the curated catalog
   nexus add <name> --transport <t> [...]       Freeform install (stdio/sse/streamable-http)
   nexus remove <name>                          Remove a configured server (+ its keychain secrets)
   nexus memory stats                           Memory: entry count + per-server breakdown
   nexus memory list [--server S] [--tool T]    Memory: list cached entries (filtered)
   nexus memory forget [--server S] [--tool T]  Memory: drop cached entries
-  nexus graph                                  Topology: servers → tools, status, memory counts
   nexus dashboard [--port P]                   Web UI: topology + memory on http://localhost:<P> (default 7531)
   nexus help                                   Show this help
 
@@ -74,10 +72,10 @@ async function main(): Promise<void> {
     case "list-tools": {
       const { values } = parseArgs({
         args: rest,
-        options: { json: { type: "boolean", short: "j" } },
+        options: { json: { type: "boolean", short: "j" }, tree: { type: "boolean" } },
         allowPositionals: true,
       });
-      await cmdListTools(Boolean(values.json));
+      await cmdListTools({ json: Boolean(values.json), tree: Boolean(values.tree) });
       return;
     }
     case "add":
@@ -86,8 +84,8 @@ async function main(): Promise<void> {
     case "memory":
       await cmdMemory(rest[0], rest.slice(1));
       return;
-    case "graph":
-      await cmdGraph();
+    case "graph": // alias for list-tools --tree
+      await cmdListTools({ tree: true });
       return;
     case "dashboard": {
       const { values } = parseArgs({

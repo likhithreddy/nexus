@@ -145,7 +145,7 @@ export async function cmdListServers(json: boolean): Promise<void> {
   }
 }
 
-export async function cmdListTools(json: boolean): Promise<void> {
+export async function cmdListTools(opts: { json?: boolean; tree?: boolean } = {}): Promise<void> {
   const config = await loadConfig();
   if (config.servers.length === 0) {
     console.log("No servers configured.");
@@ -154,20 +154,24 @@ export async function cmdListTools(json: boolean): Promise<void> {
   const registry = new MCPRegistry();
   const { ok, failed } = await registry.reloadAll(config.servers);
 
-  if (json) {
+  if (opts.json) {
     const tools = registry.listTools();
     await registry.closeAll();
     process.stdout.write(JSON.stringify(tools, null, 2) + "\n");
     return;
   }
 
-  // Group rows by server BEFORE closeAll (closeAll wipes the route table).
-  const byServer = new Map<string, { tool: string; cache: boolean; desc: string }[]>();
+  // Collect rows with the ORIGINAL (un-prefixed) tool name BEFORE closeAll.
+  const byServer = new Map<string, { original: string; cache: boolean; desc: string }[]>();
   for (const t of registry.listTools()) {
     const route = registry.getRoute(t.name);
     const srv = route?.serverName ?? "?";
     const arr = byServer.get(srv) ?? [];
-    arr.push({ tool: t.name, cache: route?.cacheable ?? false, desc: ((t.description ?? "").split("\n")[0] ?? "").slice(0, 70) });
+    arr.push({
+      original: route?.originalName ?? t.name,
+      cache: route?.cacheable ?? false,
+      desc: ((t.description ?? "").split("\n")[0] ?? "").slice(0, 70),
+    });
     byServer.set(srv, arr);
   }
   await registry.closeAll();
@@ -175,31 +179,48 @@ export async function cmdListTools(json: boolean): Promise<void> {
   if (failed.length > 0) {
     console.error(`(connected: ${ok.length}; failed: ${failed.join(", ")})`);
   }
-
   const allRows = [...byServer.values()].flat();
   if (allRows.length === 0 && ok.length === 0) {
     console.log("No tools discovered.");
     return;
   }
 
-  const wTool = Math.min(40, Math.max(8, ...allRows.map((r) => r.tool.length)));
+  if (opts.tree) {
+    // Tree view: tools grouped under each server.
+    const wTool = Math.min(40, Math.max(8, ...allRows.map((r) => r.original.length)));
+    for (const s of config.servers) {
+      const connected = ok.includes(s.name);
+      const rows = byServer.get(s.name) ?? [];
+      if (!connected) {
+        console.log(`\n✕ ${s.name} [${s.transport}] — not connected${failed.includes(s.name) ? " (failed)" : " (disabled)"}`);
+        continue;
+      }
+      const cacheable = rows.filter((r) => r.cache).length;
+      console.log(`\n● ${s.name} [${s.transport}]  —  ${rows.length} tool${rows.length === 1 ? "" : "s"}, ${cacheable} cacheable`);
+      if (rows.length === 0) {
+        console.log("    (no tools)");
+        continue;
+      }
+      for (const r of rows) {
+        const tool = r.original.length > wTool ? `${r.original.slice(0, wTool - 1)}…` : r.original.padEnd(wTool);
+        console.log(`    ${tool}  ${r.cache ? "[cacheable]" : ""}`);
+      }
+    }
+    return;
+  }
+
+  // Flat table: SERVER | TOOL | CACHE | DESCRIPTION (tool = original, un-prefixed).
+  const servers = [...byServer.keys()].filter(Boolean);
+  const wServer = Math.min(14, Math.max(6, ...servers.map((k) => k.length)));
+  const wTool = Math.min(34, Math.max(4, ...allRows.map((r) => r.original.length)));
+  const head = `${"SERVER".padEnd(wServer)}  ${"TOOL".padEnd(wTool)}  CACHE  DESCRIPTION`;
+  console.log(head);
+  console.log("-".repeat(head.length));
   for (const s of config.servers) {
-    const connected = ok.includes(s.name);
-    const rows = byServer.get(s.name) ?? [];
-    if (!connected) {
-      console.log(`\n✕ ${s.name} [${s.transport}] — not connected${failed.includes(s.name) ? " (failed)" : " (disabled)"}`);
-      continue;
-    }
-    const cacheable = rows.filter((r) => r.cache).length;
-    console.log(`\n● ${s.name} [${s.transport}]  —  ${rows.length} tool${rows.length === 1 ? "" : "s"}, ${cacheable} cacheable`);
-    if (rows.length === 0) {
-      console.log("    (no tools)");
-      continue;
-    }
-    console.log(`  ${"TOOL".padEnd(wTool)}  CACHE  DESCRIPTION`);
-    for (const r of rows) {
-      const tool = r.tool.length > wTool ? `${r.tool.slice(0, wTool - 1)}…` : r.tool.padEnd(wTool);
-      console.log(`  ${tool}  ${(r.cache ? "yes" : "no").padEnd(5)}  ${r.desc}`);
+    for (const r of byServer.get(s.name) ?? []) {
+      const srv = s.name.length > wServer ? `${s.name.slice(0, wServer - 1)}…` : s.name.padEnd(wServer);
+      const tool = r.original.length > wTool ? `${r.original.slice(0, wTool - 1)}…` : r.original.padEnd(wTool);
+      console.log(`${srv}  ${tool}  ${(r.cache ? "yes" : "no").padEnd(5)}  ${r.desc}`);
     }
   }
 }
