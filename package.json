@@ -1,6 +1,6 @@
 {
   "name": "@likhithreddy/nexus",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "type": "module",
   "description": "Nexus — an MCP aggregator with a memory layer.",
   "license": "MIT",

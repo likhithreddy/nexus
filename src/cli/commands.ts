@@ -341,16 +341,19 @@ export async function cmdMemory(sub: string | undefined, rest: string[]): Promis
           if (choice === "__all__") {
             let n = 0;
             for (const t of tools) n += store.forgetTool(t);
+            store.resetStats();
             console.log(`Forgot ${n} cached entry(ies).`);
             break;
           }
           const n = store.forgetTool(choice);
+          store.resetStats();
           console.log(`Forgot ${n} cached entr${n === 1 ? "y" : "ies"} (${choice}).`);
           break;
         }
         let n = 0;
         if (values.server) n += store.invalidateServer(values.server);
         if (values.tool) n += store.forgetTool(values.tool);
+        store.resetStats();
         console.log(`Forgot ${n} cached entry(ies).`);
         break;
       }

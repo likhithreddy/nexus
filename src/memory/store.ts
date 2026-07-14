@@ -204,6 +204,11 @@ export class SQLiteStore {
       .run(key, delta, delta);
   }
 
+  /** Reset all stat counters to zero (called on `nexus memory forget`). */
+  resetStats(): void {
+    this.db.exec("DELETE FROM cache_stats");
+  }
+
   stats(): { entries: number; byServer: Record<string, number>; hits: number; misses: number } {
     const total = Number(
       (this.db.prepare("SELECT COUNT(*) AS c FROM tool_results").get() as { c: number | bigint }).c,
