@@ -20,8 +20,9 @@ Usage:
   nexus add <catalog-name> [--env K=V]...      Install a server from the curated catalog
   nexus add <name> --transport <t> [...]       Freeform install (stdio/sse/streamable-http)
   nexus remove <name>                          Remove a configured server (+ its keychain secrets)
-  nexus memory stats                           Memory: entry count + per-server breakdown
+  nexus memory stats                           Memory: entries + hit/miss counters + hit rate
   nexus memory list [--server S] [--tool T]    Memory: list cached entries (filtered)
+  nexus memory show <tool>                     Memory: show full cached result content for a tool
   nexus memory forget [--server S] [--tool T]  Memory: drop cached entries
   nexus dashboard [--port P]                   Web UI: topology + memory on http://localhost:<P> (default 7531)
   nexus help                                   Show this help

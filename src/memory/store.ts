@@ -94,6 +94,10 @@ export class SQLiteStore {
         PRIMARY KEY (entry_id, server)
       );
       CREATE INDEX IF NOT EXISTS idx_trs_server ON tool_result_servers(server);
+      CREATE TABLE IF NOT EXISTS cache_stats (
+        key TEXT PRIMARY KEY,
+        value INTEGER NOT NULL DEFAULT 0
+      );
     `);
     // Dimension is a validated integer from the embedder; safe to interpolate.
     this.db.exec(
@@ -191,7 +195,16 @@ export class SQLiteStore {
     return ids.length;
   }
 
-  stats(): { entries: number; byServer: Record<string, number> } {
+  /** Increment a named stat counter (hits/misses) persisted in the DB. */
+  incrementStat(key: string, delta = 1): void {
+    this.db
+      .prepare(
+        "INSERT INTO cache_stats (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = value + ?",
+      )
+      .run(key, delta, delta);
+  }
+
+  stats(): { entries: number; byServer: Record<string, number>; hits: number; misses: number } {
     const total = Number(
       (this.db.prepare("SELECT COUNT(*) AS c FROM tool_results").get() as { c: number | bigint }).c,
     );
@@ -200,7 +213,13 @@ export class SQLiteStore {
       .all() as { server: string; c: number | bigint }[];
     const byServer: Record<string, number> = {};
     for (const r of rows) byServer[r.server] = Number(r.c);
-    return { entries: total, byServer };
+    const getStat = (key: string): number =>
+      Number(
+        (this.db.prepare("SELECT value FROM cache_stats WHERE key = ?").get(key) as
+          | { value?: number }
+          | undefined)?.value ?? 0,
+      );
+    return { entries: total, byServer, hits: getStat("hits"), misses: getStat("misses") };
   }
 
   /** List cached entries, optionally filtered by namespaced tool or server. */

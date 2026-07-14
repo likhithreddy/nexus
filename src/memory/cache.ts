@@ -50,6 +50,13 @@ export class MemoryCache {
     return this.opts.store;
   }
 
+  /** Stamp a cache-hit source marker into the result's _meta for client-side visibility. */
+  private withMeta(result: CallToolResult, source: CacheSource): CallToolResult {
+    if (source === "miss" || source === "non-cacheable") return result;
+    const meta = (result as { _meta?: Record<string, unknown> })._meta;
+    return { ...result, _meta: { ...(meta ?? {}), nexus_cache: source } };
+  }
+
   async callWithMemory(
     tool: string,
     route: RouteEntry,
@@ -69,7 +76,8 @@ export class MemoryCache {
       if (isExpired(exact.expiresAt, now)) {
         this.opts.store.deleteById(exact.id);
       } else {
-        return { result: this.deserialize(exact), source: "hit-exact" };
+        this.opts.store.incrementStat("hits");
+        return { result: this.withMeta(this.deserialize(exact), "hit-exact"), source: "hit-exact" };
       }
     }
 
@@ -92,7 +100,8 @@ export class MemoryCache {
         .sort((a, b) => b.similarity - a.similarity)[0];
 
       if (best && classifySimilarity(best.similarity) === "hit") {
-        return { result: this.deserialize(best.entry), source: "hit-semantic" };
+        this.opts.store.incrementStat("hits");
+        return { result: this.withMeta(this.deserialize(best.entry), "hit-semantic"), source: "hit-semantic" };
       }
       if (best && classifySimilarity(best.similarity) === "gray") {
         if (this.opts.verifier) {
@@ -105,7 +114,8 @@ export class MemoryCache {
           });
           if (verdict.accept) {
             logger.debug({ tool, sim: best.similarity, reason: verdict.reason }, "gray-zone verified → cached");
-            return { result: this.deserialize(best.entry), source: "hit-verified" };
+            this.opts.store.incrementStat("hits");
+            return { result: this.withMeta(this.deserialize(best.entry), "hit-verified"), source: "hit-verified" };
           }
           logger.debug({ tool, sim: best.similarity, reason: verdict.reason }, "gray-zone rejected → refetch");
         } else {
@@ -130,6 +140,7 @@ export class MemoryCache {
         expiresAt: ttl === Infinity ? null : now + ttl,
       });
     }
+    this.opts.store.incrementStat("misses");
     return { result, source: "miss" };
   }
 

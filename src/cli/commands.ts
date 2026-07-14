@@ -255,7 +255,9 @@ export async function cmdMemory(sub: string | undefined, rest: string[]): Promis
     switch (sub) {
       case "stats": {
         const s = store.stats();
-        console.log(`${s.entries} cached entry(ies)`);
+        const total = s.hits + s.misses;
+        const rate = total > 0 ? Math.round((s.hits / total) * 100) : 0;
+        console.log(`${s.entries} cached entry(ies)  ·  ${s.hits} hits, ${s.misses} misses (${rate}% hit rate)`);
         const servers = Object.entries(s.byServer).sort((a, b) => b[1] - a[1]);
         if (servers.length) {
           console.log("\nBy server:");
@@ -283,6 +285,28 @@ export async function cmdMemory(sub: string | undefined, rest: string[]): Promis
         }
         break;
       }
+      case "show": {
+        const toolName = rest[0];
+        if (!toolName) throw new Error("Usage: nexus memory show <tool-name>");
+        const entries = store.listEntries({ tool: toolName, limit: 10 });
+        if (entries.length === 0) {
+          console.log(`No cached entries for '${toolName}'.`);
+          break;
+        }
+        for (const e of entries) {
+          const age = fmtDuration(now - e.createdAt);
+          console.log(`\n${e.tool}  (age ${age})`);
+          console.log(`  args: ${e.argsText}`);
+          console.log(`  result:`);
+          try {
+            const parsed = JSON.parse(e.resultJson);
+            console.log(JSON.stringify(parsed, null, 2));
+          } catch {
+            console.log(e.resultJson);
+          }
+        }
+        break;
+      }
       case "forget": {
         const { values } = parseArgs({
           args: rest,
@@ -299,7 +323,7 @@ export async function cmdMemory(sub: string | undefined, rest: string[]): Promis
         break;
       }
       default:
-        console.log("Usage: nexus memory <stats|list|forget> [--server S] [--tool T] [--limit N]");
+        console.log("Usage: nexus memory <stats|list|show|forget> [--server S] [--tool T] [--limit N]");
     }
   } finally {
     store.close();
