@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import path from "node:path";
 import http from "node:http";
+import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig, upsertServer, removeServer, findServer } from "../config/store.js";
@@ -18,6 +19,7 @@ import { buildTtlResolver, composeTtlResolver, parseDuration } from "../memory/t
 import { SamplingVerifier } from "../memory/verifier.js";
 import { getDefaultSecretStore, type SecretStore } from "../secrets/store.js";
 import { renderGraph } from "../graph.js";
+import { select } from "@inquirer/prompts";
 import { logger } from "../logging.js";
 
 /** Parse "KEY=VALUE" or "KEY:VALUE" into a tuple. */
@@ -174,6 +176,24 @@ export async function cmdListTools(opts: { json?: boolean; tree?: boolean } = {}
     });
     byServer.set(srv, arr);
   }
+  if (opts.tree) {
+    // Topology view (same output as the old "nexus graph"): server status
+    // markers (●/✕/○), cache counts, tools with [cacheable] tags. Built
+    // BEFORE closeAll (toGraphInput reads the route table).
+    let byServerCounts: Record<string, number> = {};
+    const dbPath = path.join(getNexusHome(), "memory.db");
+    if (existsSync(dbPath)) {
+      const s = new SQLiteStore(dbPath, 1);
+      try { byServerCounts = s.stats().byServer; } finally { s.close(); }
+    }
+    const gi = registry.toGraphInput(config.servers, byServerCounts);
+    gi.failed = new Set(failed);
+    await registry.closeAll();
+    process.stdout.write(renderGraph(gi) + "\n");
+    return;
+  }
+
+  // Default: tools grouped under each server (per-server sub-tables).
   await registry.closeAll();
 
   if (failed.length > 0) {
@@ -185,42 +205,24 @@ export async function cmdListTools(opts: { json?: boolean; tree?: boolean } = {}
     return;
   }
 
-  if (opts.tree) {
-    // Tree view: tools grouped under each server.
-    const wTool = Math.min(40, Math.max(8, ...allRows.map((r) => r.original.length)));
-    for (const s of config.servers) {
-      const connected = ok.includes(s.name);
-      const rows = byServer.get(s.name) ?? [];
-      if (!connected) {
-        console.log(`\n✕ ${s.name} [${s.transport}] — not connected${failed.includes(s.name) ? " (failed)" : " (disabled)"}`);
-        continue;
-      }
-      const cacheable = rows.filter((r) => r.cache).length;
-      console.log(`\n● ${s.name} [${s.transport}]  —  ${rows.length} tool${rows.length === 1 ? "" : "s"}, ${cacheable} cacheable`);
-      if (rows.length === 0) {
-        console.log("    (no tools)");
-        continue;
-      }
-      for (const r of rows) {
-        const tool = r.original.length > wTool ? `${r.original.slice(0, wTool - 1)}…` : r.original.padEnd(wTool);
-        console.log(`    ${tool}  ${r.cache ? "[cacheable]" : ""}`);
-      }
-    }
-    return;
-  }
-
-  // Flat table: SERVER | TOOL | CACHE | DESCRIPTION (tool = original, un-prefixed).
-  const servers = [...byServer.keys()].filter(Boolean);
-  const wServer = Math.min(14, Math.max(6, ...servers.map((k) => k.length)));
-  const wTool = Math.min(34, Math.max(4, ...allRows.map((r) => r.original.length)));
-  const head = `${"SERVER".padEnd(wServer)}  ${"TOOL".padEnd(wTool)}  CACHE  DESCRIPTION`;
-  console.log(head);
-  console.log("-".repeat(head.length));
+  const wTool = Math.min(34, Math.max(8, ...allRows.map((r) => r.original.length)));
   for (const s of config.servers) {
-    for (const r of byServer.get(s.name) ?? []) {
-      const srv = s.name.length > wServer ? `${s.name.slice(0, wServer - 1)}…` : s.name.padEnd(wServer);
+    const connected = ok.includes(s.name);
+    const rows = byServer.get(s.name) ?? [];
+    if (!connected) {
+      console.log(`\n✕ ${s.name} [${s.transport}] — not connected${failed.includes(s.name) ? " (failed)" : " (disabled)"}`);
+      continue;
+    }
+    const cacheable = rows.filter((r) => r.cache).length;
+    console.log(`\n● ${s.name} [${s.transport}]  —  ${rows.length} tool${rows.length === 1 ? "" : "s"}, ${cacheable} cacheable`);
+    if (rows.length === 0) {
+      console.log("    (no tools)");
+      continue;
+    }
+    console.log(`  ${"TOOL".padEnd(wTool)}  CACHE  DESCRIPTION`);
+    for (const r of rows) {
       const tool = r.original.length > wTool ? `${r.original.slice(0, wTool - 1)}…` : r.original.padEnd(wTool);
-      console.log(`${srv}  ${tool}  ${(r.cache ? "yes" : "no").padEnd(5)}  ${r.desc}`);
+      console.log(`  ${tool}  ${(r.cache ? "yes" : "no").padEnd(5)}  ${r.desc}`);
     }
   }
 }
@@ -314,7 +316,37 @@ export async function cmdMemory(sub: string | undefined, rest: string[]): Promis
           allowPositionals: true,
         });
         if (!values.server && !values.tool) {
-          throw new Error("Usage: nexus memory forget [--server S] [--tool T]");
+          // Interactive: pick from available cache entries
+          if (!process.stdin.isTTY) {
+            throw new Error("Usage: nexus memory forget [--server S] [--tool T]");
+          }
+          const entries = store.listEntries({ limit: 100 });
+          if (entries.length === 0) {
+            console.log("No cached entries to forget.");
+            break;
+          }
+          const tools = [...new Set(entries.map((e) => e.tool))];
+          const choice = await select({
+            message: "What to forget?",
+            choices: [
+              ...tools.map((t) => ({ name: t, value: t })),
+              { name: "All entries", value: "__all__" },
+              { name: "Cancel", value: "__cancel__" },
+            ],
+          });
+          if (choice === "__cancel__") {
+            console.log("Cancelled.");
+            break;
+          }
+          if (choice === "__all__") {
+            let n = 0;
+            for (const t of tools) n += store.forgetTool(t);
+            console.log(`Forgot ${n} cached entry(ies).`);
+            break;
+          }
+          const n = store.forgetTool(choice);
+          console.log(`Forgot ${n} cached entr${n === 1 ? "y" : "ies"} (${choice}).`);
+          break;
         }
         let n = 0;
         if (values.server) n += store.invalidateServer(values.server);
@@ -428,9 +460,12 @@ export async function cmdDashboard(port: number): Promise<void> {
     }
   });
 
-  httpServer.listen(port, () =>
-    logger.info({ url: `http://localhost:${port}` }, "nexus dashboard ready"),
-  );
+  httpServer.listen(port, () => {
+    const url = `http://localhost:${port}`;
+    console.log(`\n  Nexus dashboard → ${url}\n  Press Ctrl-C to stop.\n`);
+    if (process.platform === "darwin") exec(`open ${url}`);
+    else if (process.platform === "linux") exec(`xdg-open ${url} 2>/dev/null || true`);
+  });
   const shutdown = (): void => {
     void registry.closeAll().then(() => process.exit(0));
   };

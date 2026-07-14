@@ -1,6 +1,6 @@
 {
   "name": "@likhithreddy/nexus",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "description": "Nexus — an MCP aggregator with a memory layer.",
   "license": "MIT",
@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",
+    "@inquirer/prompts": "^8.5.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "keytar": "^7.9.0",
     "pino": "^10.3.1",
