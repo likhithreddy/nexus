@@ -1,6 +1,6 @@
 {
   "name": "@likhithreddy/nexus",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "type": "module",
   "description": "Nexus — an MCP aggregator with a memory layer.",
   "license": "MIT",
@@ -56,6 +56,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
+    "@types/vscode": "^1.125.0",
     "tsup": "^8.5.1",
     "tsx": "^4.23.0",
     "typescript": "^6.0.3",

@@ -13,6 +13,10 @@ export function getConfigPath(): string {
   return path.join(getNexusHome(), "config.json");
 }
 
+export function getDbPath(): string {
+  return path.join(getNexusHome(), "memory.db");
+}
+
 export function getCatalogUserPath(): string {
   return path.join(getNexusHome(), "catalog.json");
 }

@@ -40,6 +40,34 @@ export interface SearchHit {
   similarity: number;
 }
 
+export interface QaEntry {
+  id: number;
+  question: string;
+  fingerprint: string;
+  answer: string;
+  tools: { tool: string; ttlMs: number }[];
+  contextSignature: string;
+  createdAt: number;
+  expiresAt: number | null;
+  hits: number;
+}
+
+export interface QaPut {
+  embedding: Float32Array | null;
+  question: string;
+  fingerprint: string;
+  answer: string;
+  tools: { tool: string; ttlMs: number }[];
+  contextSignature: string;
+  createdAt: number;
+  expiresAt: number | null;
+}
+
+export interface QaSearchHit {
+  entry: QaEntry;
+  similarity: number;
+}
+
 function toBuffer(v: Float32Array): Buffer {
   return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
 }
@@ -98,10 +126,28 @@ export class SQLiteStore {
         key TEXT PRIMARY KEY,
         value INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS qa_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_text TEXT NOT NULL,
+        question_fingerprint TEXT NOT NULL,
+        answer_text TEXT NOT NULL,
+        tools_json TEXT NOT NULL,
+        context_signature TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        hits INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_qa_fp ON qa_cache(question_fingerprint);
+      CREATE INDEX IF NOT EXISTS idx_qa_ctx ON qa_cache(context_signature);
     `);
     // Dimension is a validated integer from the embedder; safe to interpolate.
     this.db.exec(
       `CREATE VIRTUAL TABLE IF NOT EXISTS vec_tool_results USING vec0(embedding float[${Number(
+        dimension,
+      )}] distance_metric=cosine);`,
+    );
+    this.db.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS vec_qa_cache USING vec0(embedding float[${Number(
         dimension,
       )}] distance_metric=cosine);`,
     );
@@ -254,6 +300,93 @@ export class SQLiteStore {
     }[];
     for (const { id } of ids) this.deleteById(Number(id));
     return ids.length;
+  }
+
+  // --- Q&A cache (question → full-answer pairs for the assistant mode) ---
+
+  putQa(p: QaPut): number {
+    this.db.prepare(
+      `INSERT INTO qa_cache (question_text, question_fingerprint, answer_text, tools_json, context_signature, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(p.question, p.fingerprint, p.answer, JSON.stringify(p.tools), p.contextSignature, p.createdAt, p.expiresAt);
+    const id = Number(
+      (this.db.prepare("SELECT last_insert_rowid() AS id").get() as { id: number | bigint }).id,
+    );
+    if (p.embedding) {
+      this.db.prepare("INSERT INTO vec_qa_cache (rowid, embedding) VALUES (?, ?)")
+        .run(BigInt(id), toBuffer(p.embedding));
+    }
+    return id;
+  }
+
+  searchQaByEmbedding(vec: Float32Array, k: number, contextSignature: string): QaSearchHit[] {
+    const nn = this.db
+      .prepare("SELECT rowid AS id, distance FROM vec_qa_cache WHERE embedding MATCH ? ORDER BY distance LIMIT ?")
+      .all(toBuffer(vec), k) as { id: number | bigint; distance: number }[];
+    if (nn.length === 0) return [];
+    const placeholders = nn.map(() => "?").join(",");
+    const rows = this.db
+      .prepare(`SELECT * FROM qa_cache WHERE id IN (${placeholders})`)
+      .all(...nn.map((r) => BigInt(r.id))) as Record<string, unknown>[];
+    const byId = new Map<number, QaEntry>();
+    for (const r of rows) { const e = this.rowToQa(r); byId.set(e.id, e); }
+    return nn
+      .map((r) => {
+        const entry = byId.get(Number(r.id));
+        if (!entry || entry.contextSignature !== contextSignature) return null;
+        return { entry, similarity: 1 - r.distance };
+      })
+      .filter((x): x is QaSearchHit => x !== null);
+  }
+
+  getQaById(id: number): QaEntry | null {
+    const row = this.db.prepare("SELECT * FROM qa_cache WHERE id = ?").get(BigInt(id)) as Record<string, unknown> | undefined;
+    return row ? this.rowToQa(row) : null;
+  }
+
+  incrementQaHit(id: number): void {
+    this.db.prepare("UPDATE qa_cache SET hits = hits + 1 WHERE id = ?").run(BigInt(id));
+  }
+
+  listQaEntries(limit = 50): QaEntry[] {
+    const rows = this.db.prepare("SELECT * FROM qa_cache ORDER BY created_at DESC LIMIT ?").all(limit) as Record<string, unknown>[];
+    return rows.map((r) => this.rowToQa(r));
+  }
+
+  forgetQa(): number {
+    const ids = this.db.prepare("SELECT id FROM qa_cache").all() as { id: number | bigint }[];
+    for (const { id } of ids) {
+      this.db.prepare("DELETE FROM qa_cache WHERE id = ?").run(BigInt(id));
+      this.db.prepare("DELETE FROM vec_qa_cache WHERE rowid = ?").run(BigInt(id));
+    }
+    return ids.length;
+  }
+
+  qaStats(): { entries: number; hits: number; misses: number } {
+    const entries = Number(
+      (this.db.prepare("SELECT COUNT(*) AS c FROM qa_cache").get() as { c: number | bigint }).c,
+    );
+    const getStat = (key: string): number =>
+      Number(
+        (this.db.prepare("SELECT value FROM cache_stats WHERE key = ?").get(key) as
+          | { value?: number }
+          | undefined)?.value ?? 0,
+      );
+    return { entries, hits: getStat("qa_hits"), misses: getStat("qa_misses") };
+  }
+
+  private rowToQa(row: Record<string, unknown>): QaEntry {
+    return {
+      id: Number(row["id"]),
+      question: String(row["question_text"]),
+      fingerprint: String(row["question_fingerprint"]),
+      answer: String(row["answer_text"]),
+      tools: JSON.parse(String(row["tools_json"])) as { tool: string; ttlMs: number }[],
+      contextSignature: String(row["context_signature"]),
+      createdAt: Number(row["created_at"]),
+      expiresAt: row["expires_at"] == null ? null : Number(row["expires_at"]),
+      hits: Number(row["hits"]),
+    };
   }
 
   close(): void {

@@ -20,6 +20,7 @@ import { SamplingVerifier } from "../memory/verifier.js";
 import { getDefaultSecretStore, type SecretStore } from "../secrets/store.js";
 import { renderGraph } from "../graph.js";
 import { select } from "@inquirer/prompts";
+import { startBackend } from "../backend/server.js";
 import { logger } from "../logging.js";
 
 /** Parse "KEY=VALUE" or "KEY:VALUE" into a tuple. */
@@ -124,6 +125,19 @@ export async function cmdServe(): Promise<void> {
     logger.info({ sig }, "shutting down");
     await registry.closeAll();
     await server.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+}
+
+/** Run the Nexus backend HTTP server (for the VS Code extension). */
+export async function cmdBackend(opts: { port?: number; host?: string; token?: string }): Promise<void> {
+  logger.info({ port: opts.port ?? "ephemeral", host: opts.host ?? "127.0.0.1" }, "starting backend…");
+  const { close } = await startBackend(opts);
+  const shutdown = async (sig: string): Promise<void> => {
+    logger.info({ sig }, "backend shutting down");
+    await close();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));

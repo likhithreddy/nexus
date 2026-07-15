@@ -7,6 +7,7 @@ import {
   cmdRemove,
   cmdMemory,
   cmdDashboard,
+  cmdBackend,
 } from "./commands.js";
 import { logger } from "../logging.js";
 import { VERSION } from "../version.js";
@@ -48,7 +49,8 @@ async function main(): Promise<void> {
 
   // Inspection commands print human output on stdout; keep stderr quiet unless
   // NEXUS_LOG_LEVEL is set or we're serving (serve needs the logs).
-  if (command !== "serve" && !process.env.NEXUS_LOG_LEVEL) {
+  const SERVER_COMMANDS = new Set(["serve", "backend", "dashboard"]);
+  if (!(!command || SERVER_COMMANDS.has(command)) && !process.env.NEXUS_LOG_LEVEL) {
     logger.level = "warn";
   }
 
@@ -95,6 +97,23 @@ async function main(): Promise<void> {
         allowPositionals: true,
       });
       await cmdDashboard(values.port ? Number(values.port) : 7531);
+      return;
+    }
+    case "backend": {
+      const { values } = parseArgs({
+        args: rest,
+        options: {
+          port: { type: "string", short: "p" },
+          host: { type: "string" },
+          token: { type: "string" },
+        },
+        allowPositionals: true,
+      });
+      await cmdBackend({
+        port: values.port ? Number(values.port) : undefined,
+        host: values.host,
+        token: values.token,
+      });
       return;
     }
     case "remove":
