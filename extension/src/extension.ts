@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { BackendManager } from "./backendManager";
+import { handleNexusChat } from "./chatHandler";
 
 let backendMgr: BackendManager;
 
@@ -9,18 +10,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // Register @nexus chat participant
   const handler: vscode.ChatRequestHandler = async (request, chatContext, stream, token) => {
     try {
-      const client = await backendMgr.getOrSpawn();
-
-      // Phase 3 will add the full memory-check → LLM loop here.
-      // For now, a simple health-check response:
-      const health = await client.health();
-      stream.markdown(
-        `**Nexus backend connected** — ${health.tools} tools from ${health.servers} server(s).\n\n` +
-        `*Full chat handler (memory check → Copilot LLM → cache) coming in Phase 3.*`,
-      );
+      await handleNexusChat(request, chatContext, stream, backendMgr);
     } catch (err) {
       stream.markdown(
-        `⚠️ **Nexus backend error:** ${(err as Error).message}\n\n` +
+        `⚠️ **Nexus error:** ${(err as Error).message}\n\n` +
         `Run **"Nexus: Restart Backend"** or check the **Nexus Backend** output channel.`,
       );
     }
