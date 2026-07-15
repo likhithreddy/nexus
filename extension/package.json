@@ -1,0 +1,64 @@
+{
+  "name": "nexus",
+  "displayName": "Nexus — MCP Assistant with Memory",
+  "description": "Ask tool-backed questions through your MCP servers with memory caching. Repeat questions cost 0 tokens.",
+  "version": "0.1.0",
+  "publisher": "likhithreddy",
+  "license": "MIT",
+  "engines": { "vscode": "^1.99.0" },
+  "categories": ["Machine Learning", "Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onChatParticipant:nexus.chat"],
+  "contributes": {
+    "chatParticipants": [{
+      "id": "nexus.chat",
+      "name": "nexus",
+      "fullName": "Nexus",
+      "description": "Ask your MCP tools through Nexus with memory caching (saves tokens on repeats)",
+      "isSticky": true
+    }],
+    "configuration": {
+      "title": "Nexus",
+      "properties": {
+        "nexus.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the `nexus` CLI. Auto-detected if empty (PATH → npx)."
+        },
+        "nexus.modelId": {
+          "type": "string",
+          "default": "",
+          "description": "Preferred Copilot model id (e.g. gpt-4o). Empty = auto-select."
+        },
+        "nexus.disableQaCache": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip the memory cache (always call the model)."
+        },
+        "nexus.maxToolRounds": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Max LLM tool-calling rounds before giving up."
+        }
+      }
+    },
+    "commands": [
+      { "command": "nexus.restartBackend", "title": "Nexus: Restart Backend" },
+      { "command": "nexus.showStats", "title": "Nexus: Show Cache Stats" }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "package": "vsce package --no-yarn"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.99.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.5.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}

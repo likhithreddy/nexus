@@ -31,6 +31,7 @@
   "scripts": {
     "dev": "tsx src/cli/index.ts",
     "build": "tsup",
+    "build:ext": "npm --prefix extension run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "serve": "tsx src/cli/index.ts serve",
