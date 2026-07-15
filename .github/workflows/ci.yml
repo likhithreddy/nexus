@@ -23,3 +23,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # Extension build (Phase 2-4)
+      - run: npm --prefix extension install
+      - run: npm --prefix extension run typecheck
+      - run: npm --prefix extension run build

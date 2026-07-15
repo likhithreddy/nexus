@@ -51,6 +51,7 @@
   },
   "scripts": {
     "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
     "watch": "node build.mjs --watch",
     "package": "vsce package --no-yarn"
   },
