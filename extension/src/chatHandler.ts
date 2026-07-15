@@ -3,6 +3,8 @@ import type { BackendManager } from "./backendManager";
 import type { BackendClient } from "./backendClient";
 import { runAgent, type ToolSpec } from "./agent";
 import { VscodeLmModel } from "./modelClient";
+import { gatherWorkspaceContext, contextSignature, buildContextPrompt } from "./workspaceContext";
+import { toAgentHistory } from "./history";
 
 const SYSTEM_PROMPT =
   "You are Nexus, an assistant that answers questions using MCP tools. " +
@@ -28,13 +30,17 @@ export async function handleNexusChat(
   const client = await backendMgr.getOrSpawn();
   const question = request.prompt;
 
+  // Gather workspace context (active file, selection, workspace root)
+  const wctx = gatherWorkspaceContext();
+  const sig = contextSignature(wctx);
+
   // Follow-up turns (history present) bypass cache for safety
   const isFirstTurn = context.history.length === 0;
 
   // --- Step 1: Memory check (0 tokens on hit) ---
   if (!disableCache && isFirstTurn) {
     try {
-      const lookup = await client.qaLookup(question);
+      const lookup = await client.qaLookup(question, sig);
       if (lookup.hit && lookup.answer) {
         stream.markdown(lookup.answer);
         stream.markdown("\n\n_— ⚡ served from memory · 0 tokens_");
@@ -63,7 +69,8 @@ export async function handleNexusChat(
     inputSchema: t.inputSchema as object | undefined,
   }));
 
-  // Run the agent loop
+  // Run the agent loop (with workspace context + follow-up history)
+  const agentHistory = toAgentHistory(context.history);
   const agentModel = new VscodeLmModel(model);
   const { answer, toolsUsed } = await runAgent({
     model: agentModel,
@@ -76,9 +83,10 @@ export async function handleNexusChat(
         return { content: text, isError: result.isError };
       },
     },
-    system: SYSTEM_PROMPT,
+    system: SYSTEM_PROMPT + buildContextPrompt(wctx),
     userPrompt: question,
     tools: toolSpecs,
+    history: agentHistory,
     maxRounds,
     onText: (chunk) => stream.markdown(chunk),
   });
@@ -86,7 +94,7 @@ export async function handleNexusChat(
   // --- Step 3: Store (first turn only) ---
   if (!disableCache && isFirstTurn && answer) {
     try {
-      await client.qaStore({ question, answer, toolsUsed });
+      await client.qaStore({ question, answer, toolsUsed, contextSignature: sig });
       stream.markdown("\n\n_— cached for next time_");
     } catch {
       // Store failed — non-fatal; the answer was already streamed
