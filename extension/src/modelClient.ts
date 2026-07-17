@@ -20,12 +20,19 @@ export class VscodeLmModel implements AgentModel {
         : vscode.LanguageModelChatMessage.Assistant(m.content),
     );
 
-    // Convert tools (plain objects matching LanguageModelChatTool interface)
-    const vscodeTools: vscode.LanguageModelChatTool[] = tools.map((t) => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: t.inputSchema as object | undefined,
-    }));
+    // VS Code's LanguageModelChatTool only allows [a-zA-Z0-9_-] in tool names.
+    // MCP tools are namespaced with dots (e.g. "memory.create_entities").
+    // Sanitize dots → double-underscore and keep a lookup map for the reverse.
+    const nameMap = new Map<string, string>();
+    const vscodeTools: vscode.LanguageModelChatTool[] = tools.map((t) => {
+      const sanitized = t.name.replace(/\./g, "__");
+      nameMap.set(sanitized, t.name);
+      return {
+        name: sanitized,
+        description: t.description,
+        inputSchema: t.inputSchema as object | undefined,
+      };
+    });
 
     // Send
     const response = await this.model.sendRequest(vscodeMessages, {
@@ -33,13 +40,14 @@ export class VscodeLmModel implements AgentModel {
       toolMode: vscode.LanguageModelChatToolMode.Auto,
     });
 
-    // Collect response parts
+    // Collect response parts — convert tool call names back to original (dotted)
     const parts: AgentResponsePart[] = [];
     for await (const part of response.stream) {
       if (part instanceof vscode.LanguageModelTextPart) {
         parts.push({ type: "text", text: part.value });
       } else if (part instanceof vscode.LanguageModelToolCallPart) {
-        parts.push({ type: "tool-call", callId: part.callId, name: part.name, input: part.input });
+        const originalName = nameMap.get(part.name) ?? part.name;
+        parts.push({ type: "tool-call", callId: part.callId, name: originalName, input: part.input });
       }
     }
 
